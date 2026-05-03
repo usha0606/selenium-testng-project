@@ -1,0 +1,97 @@
+pipeline {
+
+    agent any
+
+    tools {
+        maven 'Maven3'
+        jdk   'JDK21'
+    }
+
+    environment {
+        PROJECT_NAME = 'SwagLabs-Selenium-TestNG'
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                echo '========== Checking out code from GitHub =========='
+                checkout scm
+                echo "Branch   : ${env.BRANCH_NAME}"
+                echo "Commit   : ${env.GIT_COMMIT}"
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo '========== Compiling the project =========='
+                bat 'mvn clean compile -q'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                echo '========== Running Selenium TestNG tests =========='
+                bat 'mvn test -Dsurefire.suiteXmlFiles=testng.xml'
+            }
+        }
+
+        stage('Publish Reports') {
+            steps {
+                echo '========== Publishing reports and screenshots =========='
+
+                archiveArtifacts artifacts: 'screenshots/**/*',
+                                 allowEmptyArchive: true,
+                                 fingerprint: true
+
+                archiveArtifacts artifacts: 'target/surefire-reports/**/*',
+                                 allowEmptyArchive: true
+
+                publishTestNGResults(
+                    testResultsPattern: '**/target/surefire-reports/testng-results.xml',
+                    allowEmptyResults: true
+                )
+            }
+        }
+    }
+
+    post {
+
+        always {
+            echo '========== Pipeline completed =========='
+        }
+
+        success {
+            echo 'ALL TESTS PASSED — Build Successful!'
+            emailext(
+                subject: "SUCCESS: ${PROJECT_NAME} Build #${BUILD_NUMBER}",
+                body: """
+                    Status       : SUCCESS
+                    Project      : ${PROJECT_NAME}
+                    Build Number : ${BUILD_NUMBER}
+                    Duration     : ${currentBuild.durationString}
+                    Build URL    : ${BUILD_URL}
+                """,
+                to: 'your@email.com'
+            )
+        }
+
+        failure {
+            echo 'TESTS FAILED — Check logs and screenshots!'
+            emailext(
+                subject: "FAILED: ${PROJECT_NAME} Build #${BUILD_NUMBER}",
+                body: """
+                    Status       : FAILED
+                    Project      : ${PROJECT_NAME}
+                    Build Number : ${BUILD_NUMBER}
+                    Duration     : ${currentBuild.durationString}
+                    Build URL    : ${BUILD_URL}
+
+                    Please check Console Output and Screenshots.
+                """,
+                to: 'your@email.com',
+                attachmentsPattern: 'screenshots/**/*.png'
+            )
+        }
+    }
+}
